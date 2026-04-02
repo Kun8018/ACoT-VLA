@@ -58,6 +58,15 @@ rlds = [
     "tensorflow-cpu==2.15.0",
     "tensorflow-datasets==4.9.9",
 ]
+rl = [
+    # RLinf：基于 Ray + PyTorch 的分布式强化学习框架
+    # 支持 PPO/GRPO 微调 pi0 / ACoT-VLA 策略
+    # 安装：pip install rlinf
+    # 或：pip install git+https://github.com/RLinf/RLinf.git
+    "rlinf>=0.2.0",
+    "ray[default]>=2.47.0",
+    "hydra-core",
+]
 
 [tool.uv]
 override-dependencies = ["ml-dtypes==0.4.1", "tensorstore==0.1.74"]

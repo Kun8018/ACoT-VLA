@@ -1,0 +1,37 @@
+# ACoT-VLA / openpi 模型配置（供 RLinf Actor 使用）
+# 兼容 RLinf 的 openpi 模型接口（OpenPi0ForRLActionPrediction）
+
+model_type: "openpi"
+
+# 模型权重路径，指向 ACoT-VLA 或标准 pi0 的 HuggingFace 格式检查点
+# 运行时通过命令行或 .env 文件覆盖：
+#   ++actor.model.model_path=/path/to/checkpoint
+model_path: "/path/to/acot_vla_checkpoint"
+
+precision: null
+
+# 动作和 chunk 设置（与 ACoT-VLA 推理对齐）
+num_action_chunks: 10             # ACoT-VLA 默认输出 10 步动作
+action_dim: 7                     # 机器人末端执行器 7 DoF
+
+# LoRA 设置（建议开启以节省显存）
+is_lora: True
+lora_rank: 32
+
+# 训练设置
+use_proprio: True
+num_steps: 4                      # 去噪步数（推理时可增加到 10）
+add_value_head: True              # PPO 需要 Value Head
+
+# openpi 特定参数（与 RLinf openpi adapter 对齐）
+openpi:
+  config_name: "acot_icra_simulation_challenge_reasoning_to_action"
+  num_images_in_input: 2          # agentview + wrist
+  noise_level: 0.5
+  action_chunk: ${actor.model.num_action_chunks}
+  num_steps: ${actor.model.num_steps}
+  train_expert_only: True         # 仅训练 Action Expert 部分
+  action_env_dim: ${actor.model.action_dim}
+  noise_method: "flow_sde"
+  add_value_head: ${actor.model.add_value_head}
+  detach_critic_input: True

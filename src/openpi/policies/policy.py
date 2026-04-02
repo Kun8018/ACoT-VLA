@@ -5,6 +5,7 @@ import time
 from typing import Any, TypeAlias, Optional
 import copy
 import flax
+import flax.nnx as nnx
 import flax.traverse_util
 import jax
 import jax.numpy as jnp
