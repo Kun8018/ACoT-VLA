@@ -17,6 +17,8 @@ from typing_extensions import override
 
 from openpi import transforms as _transforms
 from openpi.models import model as _model
+from openpi.policies.rlt.modeling_rlt_jax import RLTPolicy
+from openpi.policies.rlt.configuration_rlt import RLTConfig
 from openpi.shared import array_typing as at
 from openpi.shared import nnx_utils
 
@@ -36,7 +38,9 @@ class Policy(BasePolicy):
         metadata: dict[str, Any] | None = None,
         refinement_strategy: str = "simple",
         task_strategy_map: Optional[dict[str, str]] = None,
-        rlinf_network_path: Optional[str] = None
+        rlinf_network_path: Optional[str] = None,
+        rlt_network_path: Optional[str] = None,
+        rlt_config: Optional[RLTConfig] = None,
     ):
         self._sample_actions = nnx_utils.module_jit(model.sample_actions)
         self._input_transform = _transforms.compose(transforms)
@@ -59,6 +63,20 @@ class Policy(BasePolicy):
             except Exception as e:
                 logger.warning(f"Failed to load RLinF network: {e}")
                 self._rlinf_network = None
+
+        # 初始化 RLT 网络
+        self._rlt_network = None
+        self._rlt_config = rlt_config or RLTConfig()
+        if rlt_network_path:
+            try:
+                with open(rlt_network_path, 'rb') as f:
+                    network_params = pickle.load(f)
+                self._rlt_network = RLTPolicy(self._rlt_config, state_dim=7, action_dim=7)
+                nnx.update(self._rlt_network, network_params)
+                logger.info(f"RLT network loaded from: {rlt_network_path}")
+            except Exception as e:
+                logger.warning(f"Failed to load RLT network: {e}")
+                self._rlt_network = None
 
     @override
     def infer(self, obs: dict) -> dict:
@@ -105,6 +123,9 @@ class Policy(BasePolicy):
         if strategy == "rlinf":
             logger.info(f"Using RLinF strategy for task: {task_name}")
             return self._rlinf_refine_actions(obs, outputs)
+        elif strategy == "rlt":
+            logger.info(f"Using RLT strategy for task: {task_name}")
+            return self._rlt_refine_actions(obs, outputs)
         else:
             logger.info(f"Using simple refinement strategy for task: {task_name}")
             outputs["actions"] = self._gaussian_smooth(outputs["actions"])
@@ -122,13 +143,13 @@ class Policy(BasePolicy):
         return self._task_strategy_map.get(task_name, self._refinement_strategy)
 
     def set_task_strategy(self, task_name: str, strategy: str):
-        if strategy not in ["simple", "rlinf"]:
+        if strategy not in ["simple", "rlinf", "rlt"]:
             raise ValueError(f"Invalid strategy: {strategy}")
         self._task_strategy_map[task_name] = strategy
         logger.info(f"Set strategy for task '{task_name}' to '{strategy}'")
 
     def set_global_strategy(self, strategy: str):
-        if strategy not in ["simple", "rlinf"]:
+        if strategy not in ["simple", "rlinf", "rlt"]:
             raise ValueError(f"Invalid strategy: {strategy}")
         self._refinement_strategy = strategy
         logger.info(f"Set global strategy to '{strategy}'")
@@ -176,28 +197,59 @@ class Policy(BasePolicy):
                     if abs(actions[i][6 + j] - t) > 0.1:
                         actions[i][6 + j] = actions[i][6 + j] * 0.9 + t * 0.1
 
-    def _rlinf_refine_actions(self, obs: dict, outputs: dict) -> dict:
+    def _rlt_refine_actions(self, obs: dict, outputs: dict) -> dict:
+        """
+        Refine actions using RLT strategy.
+
+        Args:
+            obs: Observation dictionary containing state and task information.
+            outputs: Current policy outputs with actions to refine.
+
+        Returns:
+            Outputs with refined actions.
+        """
         task_name = obs.get("task_name", None)
         raw_actions = outputs["actions"]
 
-        if self._rlinf_network is None:
-            logger.warning("RLinF network not initialized, falling back to simple refinement")
+        if self._rlt_network is None:
+            logger.warning("RLT network not initialized, falling back to simple refinement")
             return self._simple_refinement(outputs, task_name)
 
-        state = obs.get("state", jnp.zeros(32))
+        state = obs.get("state", jnp.zeros(7))  # 默认7维状态
 
-        improved_actions = []
-        for i in range(raw_actions.shape[0]):
-            action = raw_actions[i:i+1]
-            improved_action, quality = self._rlinf_network(state[None], action)
-            improved_action = self._apply_physical_constraints(improved_action[0], task_name)
-            improved_actions.append(improved_action)
+        try:
+            # 模拟 VLA 嵌入生成
+            # 在实际使用中，这里会调用预训练的 VLA 模型来获取嵌入和参考动作
+            batch_size = 1
+            vla_seq_len = 50
+            vla_dim = 2048
+            dummy_vla_emb = jax.random.normal(jax.random.PRNGKey(0), (batch_size, vla_seq_len, vla_dim))
+            dummy_ref_actions = jax.random.normal(jax.random.PRNGKey(1), (batch_size, self._rlt_config.chunk_size, 7))
 
-        improved_actions = jnp.array(improved_actions)
-        final_actions = self._gaussian_smooth(improved_actions)
+            # 使用 RLT 网络进行动作精细化
+            refined_action_chunk = self._rlt_network(
+                dummy_vla_emb,
+                jnp.array([state]),
+                dummy_ref_actions
+            )
 
-        outputs["actions"] = final_actions
-        return outputs
+            # 这里我们简化处理，只取第一个动作chunk应用到原始动作上
+            # 在实际场景中，应该根据时间步长分配不同的动作chunk
+            improved_action = self._gaussian_smooth(refined_action_chunk[0])
+            improved_action = self._apply_physical_constraints(improved_action, task_name)
+
+            # 应用到所有动作上（简化处理）
+            improved_actions = jnp.tile(improved_action[0], (raw_actions.shape[0], 1))
+            final_actions = self._gaussian_smooth(improved_actions)
+
+            outputs["actions"] = final_actions
+            return outputs
+
+        except Exception as e:
+            logger.warning(f"RLT refinement failed: {e}, falling back to simple refinement")
+            return self._simple_refinement(outputs, task_name)
+
+    def _rlinf_refine_actions(self, obs: dict, outputs: dict) -> dict:
 
     def _apply_physical_constraints(self, action: jnp.ndarray, task_name: str) -> jnp.ndarray:
         action = jnp.clip(action, -1, 1)

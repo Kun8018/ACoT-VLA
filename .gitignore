@@ -169,4 +169,6 @@ cython_debug/
 *debug*
 logs/
 *exps*
-.vscode/
+.vscode/# RLT algorithm files
+checkpoints/rlt/
+rlt_*.pt

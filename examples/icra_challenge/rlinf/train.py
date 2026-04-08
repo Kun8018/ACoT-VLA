@@ -79,7 +79,7 @@ def _register_icra_env():
 
 @hydra.main(
     version_base="1.1",
-    config_path="config",
+    config_path=os.path.join(os.path.dirname(os.path.abspath(__file__)), "config"),
     config_name="icra_challenge_ppo_openpi",
 )
 def main(cfg) -> None:

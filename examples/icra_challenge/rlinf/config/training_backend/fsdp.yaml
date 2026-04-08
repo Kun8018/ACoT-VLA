@@ -1,0 +1,12 @@
+# RLinf FSDP (Fully Sharded Data Parallel) training backend configuration
+
+# Common configuration
+strategy: "fsdp"
+sharding_strategy: "no_shard"
+gradient_checkpointing: False
+
+# Mixed precision configuration
+mixed_precision:
+  param_dtype: "float16"
+  reduce_dtype: "float16"
+  buffer_dtype: "float16"
