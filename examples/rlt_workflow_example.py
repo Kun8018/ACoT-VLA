@@ -32,6 +32,7 @@ import optax
 
 from openpi.policies.rlt.configuration_rlt import RLTConfig
 from openpi.policies.rlt.modeling_rlt_jax import RLTokenEncoder, RLTokenDecoder, RLTActor, RLTPolicy
+from openpi.shared import nnx_utils
 
 
 # 配置日志
@@ -53,22 +54,9 @@ def train_rlt_offline(config: RLTConfig, output_dir: Path = Path("./checkpoints/
 
     # 创建模型
     rng = jax.random.PRNGKey(42)
-    encoder = RLTokenEncoder(
-        input_dim=config.rl_token.input_dim,
-        rl_token_dim=config.rl_token.rl_token_dim,
-        num_layers=config.rl_token.num_encoder_layers,
-        num_heads=config.rl_token.num_heads,
-        ff_dim=config.rl_token.ff_dim,
-        dropout=config.rl_token.dropout,
-    )
-    decoder = RLTokenDecoder(
-        rl_token_dim=config.rl_token.rl_token_dim,
-        output_dim=config.rl_token.input_dim,
-        num_layers=config.rl_token.num_decoder_layers,
-        num_heads=config.rl_token.num_heads,
-        ff_dim=config.rl_token.ff_dim,
-        dropout=config.rl_token.dropout,
-    )
+    rngs = nnx.Rngs(rng)
+    encoder = RLTokenEncoder(config, rngs=rngs)
+    decoder = RLTokenDecoder(config, rngs=rngs)
 
     # 初始化模型参数
     rng, init_rng = jax.random.split(rng)
@@ -139,24 +127,26 @@ def train_rlt_online(config: RLTConfig, encoder, decoder, output_dir: Path = Pat
     logger.info("RLT 阶段2：在线训练 Actor-Critic")
     logger.info("=" * 60)
 
-    # 冻结编码器/解码器
-    for param in nnx_utils.state(encoder).values():
-        param.requires_grad = False
-    for param in nnx_utils.state(decoder).values():
-        param.requires_grad = False
+    # 创建完整的RLT策略
+    rng = jax.random.PRNGKey(43)
+    rngs = nnx.Rngs(rng)
+    complete_policy = RLTPolicy(config, rngs=rngs)
 
-    # 创建Actor
-    actor = RLTActor(
-        state_dim=config.rl_token.rl_token_dim + 7,
-        action_chunk_dim=config.chunk_size * 7,
-        hidden_dims=config.actor.hidden_dims,
-        std=config.actor.std,
-    )
+    # 加载离线训练好的编码器和解码器
+    with open(output_dir / "rlt_offline_encoder.pkl", 'rb') as f:
+        encoder_state = pickle.load(f)
+    with open(output_dir / "rlt_offline_decoder.pkl", 'rb') as f:
+        decoder_state = pickle.load(f)
 
-    # 初始化Actor
-    dummy_state = jax.random.normal(jax.random.PRNGKey(43), (1, config.rl_token.rl_token_dim + 7))
-    dummy_ref = jax.random.normal(jax.random.PRNGKey(44), (1, config.chunk_size * 7))
-    _ = actor(dummy_state, dummy_ref)
+    # 将训练好的编码器和解码器参数应用到完整策略中
+    nnx.update(complete_policy.rl_token_encoder, encoder_state)
+    nnx.update(complete_policy.rl_token_decoder, decoder_state)
+
+    # 初始化完整策略（通过一次前向传播）
+    dummy_vla = jax.random.normal(jax.random.PRNGKey(44), (1, 50, config.rl_token.input_dim))
+    dummy_proprio = jax.random.normal(jax.random.PRNGKey(45), (1, 7))
+    dummy_ref_actions = jax.random.normal(jax.random.PRNGKey(46), (1, config.chunk_size, 7))
+    _ = complete_policy(dummy_vla, dummy_proprio, dummy_ref_actions)
 
     # 简单的在线训练模拟
     logger.info(f"Starting online training for {config.online_steps} steps...")
@@ -167,13 +157,6 @@ def train_rlt_online(config: RLTConfig, encoder, decoder, output_dir: Path = Pat
 
     # 保存完整的RLT策略
     logger.info("Saving complete RLT policy...")
-
-    complete_policy = RLTPolicy(config, state_dim=7, action_dim=7)
-
-    # 加载离线训练好的编码器
-    with open(output_dir / "rlt_offline_encoder.pkl", 'rb') as f:
-        encoder_state = pickle.load(f)
-    # 这里需要将encoder_state应用到complete_policy的编码器中
 
     with open(output_dir / "rlt_complete.pkl", 'wb') as f:
         pickle.dump(nnx_utils.state(complete_policy), f)
@@ -199,7 +182,18 @@ def run_inference_with_rlt(config: RLTConfig, rlt_checkpoint_path: Path):
         with open(rlt_checkpoint_path, 'rb') as f:
             rlt_state = pickle.load(f)
 
-        rlt_policy = RLTPolicy(config, state_dim=7, action_dim=7)
+        # 创建RLT策略并加载参数
+        rng = jax.random.PRNGKey(47)
+        rngs = nnx.Rngs(rng)
+        rlt_policy = RLTPolicy(config, rngs=rngs)
+
+        # 通过一次前向传播初始化模型
+        dummy_vla = jax.random.normal(jax.random.PRNGKey(48), (1, 50, config.rl_token.input_dim))
+        dummy_proprio = jax.random.normal(jax.random.PRNGKey(49), (1, 7))
+        dummy_ref_actions = jax.random.normal(jax.random.PRNGKey(50), (1, config.chunk_size, 7))
+        _ = rlt_policy(dummy_vla, dummy_proprio, dummy_ref_actions)
+
+        # 加载训练好的参数
         nnx.update(rlt_policy, rlt_state)
 
         logger.info("✅ RLT policy loaded successfully")
