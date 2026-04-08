@@ -19,9 +19,9 @@ import sys
 import numpy as np
 from pathlib import Path
 
-# 添加项目根目录到PATH，这样可以找到openpi模块
+# 添加src目录到PATH，这样可以找到openpi模块
 project_root = Path(__file__).parent
-sys.path.insert(0, str(project_root))
+sys.path.insert(0, str(project_root / "src"))
 
 import jax
 import jax.numpy as jnp
