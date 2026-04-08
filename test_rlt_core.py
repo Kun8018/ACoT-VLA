@@ -4,11 +4,16 @@ RLT 核心功能测试脚本
 测试 RLT 算法的各个核心组件是否正常工作
 """
 
-import torch
-import numpy as np
-import pytest
+import sys
+from pathlib import Path
 
-from openpi.policies.rlt.modeling_rlt import (
+# 添加项目根目录到PATH，这样可以找到openpi模块
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
+
+import numpy as np
+
+from openpi.policies.rlt.modeling_rlt_jax import (
     MLP,
     RLTokenEncoder,
     RLTokenDecoder,

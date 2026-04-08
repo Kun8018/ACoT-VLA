@@ -15,11 +15,18 @@ RLT (RL Token) 算法训练脚本
 
 import argparse
 import logging
+import sys
 import numpy as np
 from pathlib import Path
 
-import torch
-from torch.optim import Optimizer
+# 添加项目根目录到PATH，这样可以找到openpi模块
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
+
+import jax
+import jax.numpy as jnp
+import flax.nnx as nnx
+import optax
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -28,11 +35,7 @@ logger = logging.getLogger(__name__)
 
 # 导入我们新创建的RLT模块
 from openpi.policies.rlt.configuration_rlt import RLTConfig
-from openpi.policies.rlt.modeling_rlt import RLTPolicy
-from openpi.training.rl_algorithms.rlt.rlt_algorithm import (
-    RLTAlgorithm,
-    TrainingStats,
-)
+from openpi.policies.rlt.modeling_rlt_jax import RLTPolicy
 
 
 class SimpleReplayBuffer:

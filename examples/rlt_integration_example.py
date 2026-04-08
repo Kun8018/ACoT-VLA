@@ -9,12 +9,17 @@ RLT 与 ACoT-VLA 集成示例
 """
 
 import logging
-import numpy as np
+import sys
 from pathlib import Path
 from typing import Optional
 
-import torch
-import torch.nn as nn
+# 添加项目根目录到PATH，这样可以找到openpi模块
+project_root = Path(__file__).parent.parent
+sys.path.insert(0, str(project_root))
+
+import jax
+import jax.numpy as jnp
+import flax.nnx as nnx
 
 # 配置日志
 logging.basicConfig(level=logging.INFO, format='%(asctime)s - %(levelname)s - %(message)s')
@@ -23,8 +28,7 @@ logger = logging.getLogger(__name__)
 
 # 导入我们的 RLT 模块
 from openpi.policies.rlt.configuration_rlt import RLTConfig
-from openpi.policies.rlt.modeling_rlt import RLTPolicy
-from openpi.training.rl_algorithms.rlt.rlt_algorithm import RLTAlgorithm
+from openpi.policies.rlt.modeling_rlt_jax import RLTPolicy
 
 
 class ACOTVLAEmbeddingExtractor(nn.Module):

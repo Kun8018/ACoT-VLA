@@ -7,8 +7,14 @@ RLT策略集成测试脚本
 
 import logging
 import tempfile
+import sys
 from pathlib import Path
 import pickle
+
+# 添加项目根目录到PATH，这样可以找到openpi模块
+project_root = Path(__file__).parent
+sys.path.insert(0, str(project_root))
+
 import jax
 import jax.numpy as jnp
 
