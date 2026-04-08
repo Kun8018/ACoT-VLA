@@ -21,7 +21,7 @@ class MLP(nnx.Module):
 
         # 直接在 __init__ 中创建子模块，不使用 @nnx.compact
         prev_dim = input_dim
-        self.layers = []
+        self.layers = nnx.List()
         for i, hidden_dim in enumerate(hidden_dims):
             fc = nnx.Linear(prev_dim, hidden_dim, rngs=rngs)
             self.layers.append(fc)
