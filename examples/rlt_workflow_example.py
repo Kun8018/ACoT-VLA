@@ -31,8 +31,7 @@ import flax.nnx as nnx
 import optax
 
 from openpi.policies.rlt.configuration_rlt import RLTConfig
-from openpi.policies.rlt.modeling_rlt_jax import RLTokenEncoder, RLTokenDecoder, RLTActor, RLTPolicy
-from openpi.shared import nnx_utils
+from openpi.policies.rlt.modeling_rlt_jax import RLTokenEncoder, RLTokenDecoder, RLTPolicy
 
 
 # 配置日志
@@ -66,7 +65,7 @@ def train_rlt_offline(config: RLTConfig, output_dir: Path = Path("./checkpoints/
 
     # 优化器
     optimizer = optax.adam(config.rl_token_lr)
-    opt_state = optimizer.init(nnx_utils.state(encoder) | nnx_utils.state(decoder))
+    opt_state = optimizer.init(nnx.state(encoder) | nnx.state(decoder))
 
     # 训练循环
     logger.info(f"Starting offline training for {config.offline_steps} steps...")
@@ -94,8 +93,8 @@ def train_rlt_offline(config: RLTConfig, output_dir: Path = Path("./checkpoints/
             return loss
 
         # 计算梯度
-        encoder_state = nnx_utils.state(encoder)
-        decoder_state = nnx_utils.state(decoder)
+        encoder_state = nnx.state(encoder)
+        decoder_state = nnx.state(decoder)
 
         loss, grads = jax.value_and_grad(loss_fn, argnums=(0, 1))(encoder_state, decoder_state)
 
@@ -109,15 +108,15 @@ def train_rlt_offline(config: RLTConfig, output_dir: Path = Path("./checkpoints/
     # 保存训练好的模型
     logger.info("Saving offline trained models...")
     with open(output_dir / "rlt_offline_encoder.pkl", 'wb') as f:
-        pickle.dump(nnx_utils.state(encoder), f)
+        pickle.dump(nnx.state(encoder), f)
     with open(output_dir / "rlt_offline_decoder.pkl", 'wb') as f:
-        pickle.dump(nnx_utils.state(decoder), f)
+        pickle.dump(nnx.state(decoder), f)
 
     logger.info(f"✅ Offline training complete! Models saved to {output_dir}")
     return encoder, decoder
 
 
-def train_rlt_online(config: RLTConfig, encoder, decoder, output_dir: Path = Path("./checkpoints/rlt")):
+def train_rlt_online(config: RLTConfig, output_dir: Path = Path("./checkpoints/rlt")):
     """
     阶段2：在线训练 Actor-Critic
 
@@ -159,7 +158,7 @@ def train_rlt_online(config: RLTConfig, encoder, decoder, output_dir: Path = Pat
     logger.info("Saving complete RLT policy...")
 
     with open(output_dir / "rlt_complete.pkl", 'wb') as f:
-        pickle.dump(nnx_utils.state(complete_policy), f)
+        pickle.dump(nnx.state(complete_policy), f)
 
     logger.info(f"✅ Online training complete! Complete policy saved to {output_dir}")
     return complete_policy
@@ -268,7 +267,7 @@ def main():
 
     if args.mode in ["train", "both"]:
         encoder, decoder = train_rlt_offline(config, output_dir)
-        _ = train_rlt_online(config, encoder, decoder, output_dir)
+        _ = train_rlt_online(config, output_dir)
 
     if args.mode in ["infer", "both"]:
         run_inference_with_rlt(config, output_dir / "rlt_complete.pkl")
